@@ -1,0 +1,11 @@
+flask
+flask_cors
+flask_session
+pillow
+ffmpeg-python
+pydub
+pandoc
+chardet
+unoserver
+py7zr
+rarfile
