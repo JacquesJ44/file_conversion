@@ -428,5 +428,16 @@ def download_file(conversion_id):
     print('DOWNLOADED: ', file_url)
     return send_file(file_url, as_attachment=True)
 
+
+@app.route("/cleanup/<conversion_id>", methods=['POST'])
+@cross_origin(methods=['POST'], supports_credentials=True, origins=FRONTEND_ORIGINS)
+def cleanup_conversion(conversion_id):
+    """Remove generated files after the frontend has completed the download."""
+    remove_files_in_folder(DOWNLOAD_FOLDER)
+    remove_files_in_folder(UPLOAD_FOLDER)
+    remove_files_in_folder(TEMP_FOLDER)
+    conversion_progress.pop(conversion_id, None)
+    return jsonify({"msg": "Cleanup complete"}), 200
+
 if __name__ == "__main__":
     app.run(debug=True)

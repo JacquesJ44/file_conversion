@@ -8,6 +8,7 @@ const FileConversionProgress = ({ conversionId, onComplete }) => {
     const [lastProgressChangeAt, setLastProgressChangeAt] = useState(Date.now());
     const [startedAt, setStartedAt] = useState(null);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     useEffect(() => {
         if (!conversionId) return;  // Prevent running if conversionId is null
@@ -63,6 +64,57 @@ const FileConversionProgress = ({ conversionId, onComplete }) => {
     const isStalled = progress > 0 && progress < 100 && stalledForSeconds >= 12;
     const elapsedDisplay = `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s`;
 
+    const handleDownload = async () => {
+        if (!downloadUrl || !conversionId || isDownloading) {
+            return;
+        }
+
+        setIsDownloading(true);
+
+        try {
+            const response = await fetch(downloadUrl, {
+                method: "GET",
+                mode: "cors",
+                credentials: "include",
+            });
+
+            if (!response.ok) {
+                throw new Error("Download failed");
+            }
+
+            const blob = await response.blob();
+            const objectUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            const disposition = response.headers.get("content-disposition");
+            const matchedFilename = disposition?.match(/filename\*?=(?:UTF-8''|\")?([^";]+)/i);
+            const filename = matchedFilename ? decodeURIComponent(matchedFilename[1].replace(/\"/g, "")) : "converted-file";
+
+            link.href = objectUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(objectUrl);
+
+            await fetch(`${IP}/cleanup/${conversionId}`, {
+                method: "POST",
+                mode: "cors",
+                credentials: "include",
+            });
+
+            if (onComplete) {
+                onComplete();
+            } else {
+                window.location.reload();
+            }
+        } catch (error) {
+            console.error("Error downloading file:", error);
+            setStatus("Download failed. Please try again.");
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
     return (
         <div className="card card-border bg-base-100 w-96 mt-5">
             <div className="card-body">
@@ -79,16 +131,9 @@ const FileConversionProgress = ({ conversionId, onComplete }) => {
                 
                 <div className="card-actions justify-end">
                     {downloadUrl ? (
-                        <a href={downloadUrl} className="btn btn-primary" download 
-                        onClick={() => {
-                            // Refresh the window after the download starts
-                            setTimeout(() => {
-                                window.location.reload(); // Refresh the page after a short delay
-                            }, 500); // Small delay to ensure download starts
-                        }}
-                        >
+                        <button className="btn btn-primary" onClick={handleDownload} disabled={isDownloading}>
                             Download
-                        </a>
+                        </button>
                     ) : (
                         <button className="btn btn-disabled">Download</button>
                     )}
