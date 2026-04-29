@@ -21,17 +21,25 @@ import shutil
 UPLOAD_FOLDER = 'upload'
 DOWNLOAD_FOLDER = 'download'
 TEMP_FOLDER = 'temp'
+FRONTEND_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
+
+IS_PRODUCTION = os.getenv('FLASK_ENV') == 'production'
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(12).hex()
 app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config["SESSION_COOKIE_SAMESITE"] = 'None'
-app.config["SESSION_COOKIE_SECURE"] = True
-app.config["SESSION_COOKIE_HTTPONLY"] = False
+app.config["SESSION_COOKIE_SAMESITE"] = 'None' if IS_PRODUCTION else 'Lax'
+app.config["SESSION_COOKIE_SECURE"] = IS_PRODUCTION
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["DOWNLOAD_FOLDER"] = DOWNLOAD_FOLDER
 app.config["TEMP_FOLDER"] = TEMP_FOLDER
+
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": FRONTEND_ORIGINS}})
 
 
 FILE_URL = None
@@ -54,78 +62,97 @@ def process_conversion(conversion_id, upload_destination, conversion, to_format)
     """Handles the file conversion and updates progress in the dictionary."""
     try:
         # Initialize progress
-        conversion_progress[conversion_id] = {"progress": 0, "file_url": None}
+        conversion_progress[conversion_id] = {"progress": 0, "file_url": None, "status": "Starting conversion..."}
 
         # Simulate initial file loading
         time.sleep(1)
         conversion_progress[conversion_id]["progress"] = 5  # Initial step
+        conversion_progress[conversion_id]["status"] = "Preparing your file..."
 
         # Do the appropriate conversion
         upload_file = None
 
         if conversion == 'Images':
             conversion_progress[conversion_id]["progress"] = 10  # Start processing images
+            conversion_progress[conversion_id]["status"] = "Processing image..."
             time.sleep(1)
 
             # Convert and track progress
             conversion_progress[conversion_id]["progress"] = 30  # Image conversion starts
+            conversion_progress[conversion_id]["status"] = "Converting image format..."
             output_file = convert_image(upload_destination, to_format)
 
         elif conversion == 'Video':
             conversion_progress[conversion_id]["progress"] = 10  # Start processing video
+            conversion_progress[conversion_id]["status"] = "Preparing video conversion..."
             time.sleep(1)
 
             # Simulate different stages
             for progress in [25, 50, 75]:  # Simulating encoding stages
                 conversion_progress[conversion_id]["progress"] = progress
+                conversion_progress[conversion_id]["status"] = "Encoding video... this can take a while for large files"
                 time.sleep(2)  # Simulating actual encoding time
 
+            conversion_progress[conversion_id]["status"] = "Final video encoding in progress..."
             output_file = convert_video(upload_destination, to_format)
 
         elif conversion == 'Audio':
             conversion_progress[conversion_id]["progress"] = 10  # Start processing audio
+            conversion_progress[conversion_id]["status"] = "Preparing audio conversion..."
 
             # Simulate stages
             for progress in [30, 50, 70]:  
                 conversion_progress[conversion_id]["progress"] = progress
+                conversion_progress[conversion_id]["status"] = "Converting audio..."
                 time.sleep(1)
 
+            conversion_progress[conversion_id]["status"] = "Finalizing audio output..."
             output_file = convert_audio(upload_destination, to_format)
 
         elif conversion == 'Archives':
             conversion_progress[conversion_id]["progress"] = 10  # Start processing archive
+            conversion_progress[conversion_id]["status"] = "Preparing archive conversion..."
 
             for progress in [40, 60, 80]:  # Simulating decompression/compression steps
                 conversion_progress[conversion_id]["progress"] = progress
+                conversion_progress[conversion_id]["status"] = "Processing archive contents..."
                 time.sleep(1)
 
+            conversion_progress[conversion_id]["status"] = "Repacking archive..."
             output_file = convert_archive(upload_destination, to_format)
 
         elif conversion == 'Documents':
             conversion_progress[conversion_id]["progress"] = 10  # Start processing document
+            conversion_progress[conversion_id]["status"] = "Preparing document conversion..."
             if to_format == 'pdf':
                 conversion_progress[conversion_id]["progress"] = 20  # Preparing document
+                conversion_progress[conversion_id]["status"] = "Preparing PDF conversion..."
                 time.sleep(1)
                 conversion_progress[conversion_id]["progress"] = 50  # Converting content
+                conversion_progress[conversion_id]["status"] = "Converting document to PDF..."
                 output_file = convert_docx_to_pdf_with_libreoffice(upload_destination)
             else:
                 conversion_progress[conversion_id]["progress"] = 30  # Converting to other formats
+                conversion_progress[conversion_id]["status"] = "Converting document format..."
                 time.sleep(1)
                 output_file = convert_document(upload_destination, to_format)
 
         # Simulate finalization phase
         conversion_progress[conversion_id]["progress"] = 90  # Finalizing conversion
+        conversion_progress[conversion_id]["status"] = "Finalizing converted file..."
         time.sleep(1)
 
         # Finalizing
         conversion_progress[conversion_id]["progress"] = 100  # Completion
-        conversion_progress[conversion_id]["file_url"] = '/Users/jacquesdutoit/Developer/conversion' + output_file
+        conversion_progress[conversion_id]["file_url"] = os.path.abspath(output_file)
+        conversion_progress[conversion_id]["status"] = "Conversion complete. Ready to download."
         print(f'Conversion complete! File saved at: {output_file}')
         print('file_url: ', conversion_progress[conversion_id]["file_url"])
 
     except Exception as e:
         conversion_progress[conversion_id]["progress"] = 100  # Mark as done even on failure
         conversion_progress[conversion_id]["file_url"] = None
+        conversion_progress[conversion_id]["status"] = "Conversion failed. Please try again."
         print(f"Error in conversion: {e}")
 
 # This function detects the encoding of a document file
@@ -149,7 +176,7 @@ def convert_docx_to_pdf(input_file, output_folder=DOWNLOAD_FOLDER):
     try:
         # Run the unoconv command
         subprocess.run(["unoconv", "-f", "pdf", "-o", output_folder, input_file], check=True)
-        FILE_URL = '/' + output_file
+        FILE_URL = os.path.abspath(output_file)
         print('file_url: ', FILE_URL)
         return FILE_URL
     except subprocess.CalledProcessError as e:
@@ -165,7 +192,7 @@ def convert_docx_to_pdf_with_libreoffice(input_file):
     output_file = os.path.splitext(input_file)[0].replace(UPLOAD_FOLDER, DOWNLOAD_FOLDER) + ".pdf"
     
     output_folder = DOWNLOAD_FOLDER
-    FILE_URL = '/' + output_file
+    FILE_URL = os.path.abspath(output_file)
     subprocess.run(["soffice", "--headless", "--convert-to", "pdf", "--outdir", output_folder, input_file], check=True)
     print('file_url: ', FILE_URL)
     return FILE_URL
@@ -179,7 +206,7 @@ def convert_image(file, ext):
     im = Image.open(file)
     print(im.format, im.size, im.mode)
     im.save(output_file)
-    FILE_URL = '/' + output_file
+    FILE_URL = os.path.abspath(output_file)
     print('File saved at: ', FILE_URL)
     return FILE_URL
 
@@ -189,7 +216,7 @@ def convert_video(file, ext):
     output_file = os.path.splitext(file)[0].replace(UPLOAD_FOLDER, DOWNLOAD_FOLDER) + '.' + ext
     print('ouput_file: ' + output_file)
     ffmpeg.input(file).output(output_file).run()
-    FILE_URL = '/' + output_file
+    FILE_URL = os.path.abspath(output_file)
     print('File saved at: ', FILE_URL)
     return FILE_URL
 
@@ -202,7 +229,7 @@ def convert_audio(file, ext):
     print('ouput_file: ' + output_file)
     song = AudioSegment.from_file(file, format=input_file_ext)
     export_file = song.export(output_file, format=ext)
-    FILE_URL = '/' + output_file
+    FILE_URL = os.path.abspath(output_file)
     print('File saved at: ', FILE_URL)
     return FILE_URL
 
@@ -236,7 +263,7 @@ def convert_archive(file, ext):
     else:
         new_archive_path = os.path.splitext(file)[0].replace(UPLOAD_FOLDER, DOWNLOAD_FOLDER) + '.' + ext
     extract_folder = TEMP_FOLDER
-    FILE_URL = '/' + new_archive_path
+    FILE_URL = os.path.abspath(new_archive_path)
 
     # Extract archive
     if input_file_ext == 'zip':
@@ -295,7 +322,7 @@ def convert_document(file, ext):
     with open(output_file, "wb") as f: #, encoding="utf-8") as f:
         f.write(output)
     
-    FILE_URL = '/' + output_file
+    FILE_URL = os.path.abspath(output_file)
     # print('File saved at: ', FILE_URL)
     return FILE_URL
 
@@ -311,7 +338,7 @@ def remove_files_in_folder(folder_path):
 
 # When the user goes to the home page, delete all files in the download and upload folder
 @app.route("/", methods=['GET'])
-@cross_origin(methods=['GET'], headers=['Content-Type', 'Authorization', 'Access-Control-Allow-Origin'], supports_credentials=True, origins='http://localhost:3000')
+@cross_origin(methods=['GET'], headers=['Content-Type', 'Authorization', 'Access-Control-Allow-Origin'], supports_credentials=True, origins=FRONTEND_ORIGINS)
 def home():
     remove_files_in_folder("download")
     remove_files_in_folder("upload")
@@ -319,7 +346,7 @@ def home():
     return jsonify({"msg" : "Succesfully loaded"}), 200
 
 @app.route("/convert", methods=['POST'])
-@cross_origin(methods=['POST'], supports_credentials=True, origins='http://localhost:3000')
+@cross_origin(methods=['POST'], supports_credentials=True, origins=FRONTEND_ORIGINS)
 def convert_file():
     # Print out for debugging 
     # print("Received Request:", request.content_type)  
@@ -372,7 +399,7 @@ def convert_file():
     
     # Generate a unique conversion ID
     conversion_id = str(uuid.uuid4())
-    conversion_progress[conversion_id] = {"progress": 0, "file_url": None}
+    conversion_progress[conversion_id] = {"progress": 0, "file_url": None, "status": "Queued..."}
 
     # Start conversion in a separate thread
     thread = threading.Thread(target=process_conversion, args=(conversion_id, upload_destination, conversion, to_format))
@@ -381,7 +408,7 @@ def convert_file():
     return jsonify({"conversion_id": conversion_id, "msg": "Conversion started"}), 202
         
 @app.route("/progress/<conversion_id>", methods=['GET'])
-@cross_origin(methods=['GET'], headers=['Content-Type', 'Authorization', 'Access-Control-Allow-Origin'], supports_credentials=True, origins='http://localhost:3000')
+@cross_origin(methods=['GET'], headers=['Content-Type', 'Authorization', 'Access-Control-Allow-Origin'], supports_credentials=True, origins=FRONTEND_ORIGINS)
 def get_progress(conversion_id):
     """Fetch the conversion progress for a given conversion ID."""
     if conversion_id in conversion_progress:
@@ -390,7 +417,7 @@ def get_progress(conversion_id):
         return jsonify({"error": "Invalid conversion ID"}), 404
     
 @app.route("/download/<conversion_id>", methods=['GET'])
-@cross_origin()
+@cross_origin(supports_credentials=True, origins=FRONTEND_ORIGINS)
 def download_file(conversion_id):
     """Serve the converted file to the user."""
     file_url = conversion_progress.get(conversion_id, {}).get("file_url")
@@ -402,5 +429,4 @@ def download_file(conversion_id):
     return send_file(file_url, as_attachment=True)
 
 if __name__ == "__main__":
-    CORS(app, supports_credentials=True, resource={r"/*": {"origins": "*"}})
     app.run(debug=True)
